@@ -8,7 +8,7 @@ module SmarterCSV
       :remove_empty_values => true, :remove_zero_values => false , :remove_values_matching => nil , :remove_empty_hashes => true , :strip_whitespace => true,
       :convert_values_to_numeric => true, :strip_chars_from_headers => nil , :user_provided_headers => nil , :headers_in_file => true,
       :comment_regexp => /^#/, :chunk_size => nil , :key_mapping_hash => nil , :downcase_header => true, :strings_as_keys => false, :file_encoding => 'utf-8',
-      :remove_unmapped_keys => false,
+      :remove_unmapped_keys => false, :multiline => false
     }
     options = default_options.merge(options)
     csv_options = options.select{|k,v| [:col_sep, :row_sep, :quote_char].include?(k)} # options.slice(:col_sep, :row_sep, :quote_char)
@@ -84,7 +84,24 @@ module SmarterCSV
         line.chomp!    # will use $/ which is set to options[:col_sep]
 
         if (line =~ %r{#{options[:quote_char]}}) and (! options[:force_simple_split])
+          row_sep_replace = nil
+          if options[:multiline] and line.count(options[:quote_char]) % 2 == 1
+            while !f.eof? and line.count(options[:quote_char]) % 2 == 1
+              line << f.readline
+              line_count += 1
+              print "processing multiline row on line %10d\r" % line_count if options[:verbose]
+            end
+            line.chomp!
+            row_sep_replace = '!'
+            while line.include? row_sep_replace
+              row_sep_replace += row_sep_replace
+            end
+            line.gsub!(options[:row_sep], row_sep_replace)
+          end
           dataA = CSV.parse( line, csv_options ).flatten.collect!{|x| x.nil? ? '' : x} # to deal with nil values from CSV.parse
+          if row_sep_replace
+            dataA.collect!{ |x| x.kind_of?(String) && x.include?(row_sep_replace) ? x.gsub(row_sep_replace, options[:row_sep]) : x }
+          end
         else
           dataA =  line.split(options[:col_sep])
         end
